@@ -4,12 +4,7 @@ import streamlit as st
 from fpdf import FPDF
 
 from portal_auth import require_login, portal_header
-
-try:
-    import google.generativeai as genai
-    HAS_AI = True
-except ImportError:
-    HAS_AI = False
+from ai_utils import ai_ready, generate_content
 
 st.set_page_config(page_title="P.A.C.E. Writer", page_icon="✍️", layout="wide")
 require_login()
@@ -17,15 +12,8 @@ portal_header("✍️ P.A.C.E. Writer",
               "Write in plain text — ALL CAPS for characters, INT/EXT for "
               "scene headings — and we format the rest.")
 
-# --- optional AI ---
-api_key_found = False
-if HAS_AI:
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            api_key_found = True
-    except Exception:
-        api_key_found = False
+# --- optional AI (free tier by default; see ai_utils) ---
+AI_READY = ai_ready()
 
 
 # ==========================================================================
@@ -130,7 +118,7 @@ with tools_col:
     st.divider()
 
     st.subheader("🤖 AI co-writer")
-    if not (HAS_AI and api_key_found):
+    if not AI_READY:
         st.info("AI help is off. Add a GEMINI_API_KEY in the app's Secrets to "
                 "enable it.")
     ai_request = st.text_area(
@@ -138,7 +126,7 @@ with tools_col:
         placeholder="e.g. A tense exchange where John confronts Sarah about "
                     "the missing money.")
     if st.button("🧠 Suggest", type="primary", use_container_width=True):
-        if not (HAS_AI and api_key_found):
+        if not AI_READY:
             st.error("AI is not configured.")
         elif not ai_request.strip():
             st.warning("Tell the AI what you need first.")
@@ -150,22 +138,9 @@ with tools_col:
                           "characters, INT/EXT scene headings).\n\n"
                           f"Request: {ai_request}\n\nRecent context:\n{context}")
                 try:
-                    models = [m.name for m in genai.list_models()
-                              if "generateContent" in m.supported_generation_methods]
-                    order = ["models/gemini-1.5-flash", "models/gemini-1.5-pro",
-                             "models/gemini-pro"]
-                    ordered = [m for m in order if m in models] + \
-                              [m for m in models if m not in order]
-                    for mn in ordered:
-                        try:
-                            r = genai.GenerativeModel(mn).generate_content(prompt)
-                            if r.text:
-                                st.session_state["ai_suggestion"] = r.text
-                                break
-                        except Exception:
-                            continue
+                    st.session_state["ai_suggestion"] = generate_content(prompt)
                 except Exception as e:
-                    st.error(f"AI error: {e}")
+                    st.error(str(e))
 
     if st.session_state.get("ai_suggestion"):
         st.markdown("**Suggestion:**")
