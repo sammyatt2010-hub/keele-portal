@@ -8,17 +8,12 @@ import streamlit as st
 from fpdf import FPDF
 
 from portal_auth import require_login, portal_header
+from ai_utils import ai_ready, generate_content
 
 try:
     from pypdf import PdfReader
 except ImportError:                       # pragma: no cover
     from PyPDF2 import PdfReader
-
-try:
-    import google.generativeai as genai
-    HAS_AI = True
-except ImportError:
-    HAS_AI = False
 
 try:
     from gtts import gTTS
@@ -32,14 +27,7 @@ portal_header("📈 Sales & Marketing",
               "Upload a .pdf or .fdx script to generate a pitch deck: logline, "
               "audience, budget-aware comparables and franchise angles.")
 
-api_key_found = False
-if HAS_AI:
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            api_key_found = True
-    except Exception:
-        api_key_found = False
+AI_READY = ai_ready()
 
 
 def extract_text(upload) -> str:
@@ -72,7 +60,7 @@ if st.button("🚀 Generate pitch deck", type="primary", use_container_width=Tru
         st.error("Upload a script file first.")
     elif not character or character == "e.g. JOHN":
         st.warning("Enter the character you hold franchise rights to.")
-    elif not (HAS_AI and api_key_found):
+    elif not AI_READY:
         st.error("AI is not configured. Add a GEMINI_API_KEY in the app's "
                  "Secrets to use this module.")
     else:
@@ -110,25 +98,7 @@ Script sample:
 {sample}"""
             analysis, pdf_summary, prompts, audio = "", "", [], None
             try:
-                models = [m.name for m in genai.list_models()
-                          if "generateContent" in m.supported_generation_methods]
-                order = ["models/gemini-1.5-flash", "models/gemini-1.5-pro",
-                         "models/gemini-pro"]
-                ordered = [m for m in order if m in models] + \
-                          [m for m in models if m not in order]
-                text = ""
-                for mn in ordered:
-                    try:
-                        r = genai.GenerativeModel(mn).generate_content(prompt)
-                        text = r.text or ""
-                        if text:
-                            break
-                    except Exception:
-                        continue
-                if not text:
-                    raise RuntimeError("No response from the AI models.")
-
-                body = text
+                body = generate_content(prompt)
                 if "PITCH_PROMPTS:" in body:
                     body, tail = body.split("PITCH_PROMPTS:", 1)
                     prompts = [p.strip() for p in tail.split("|") if p.strip()]
